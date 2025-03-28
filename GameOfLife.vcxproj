@@ -469,6 +469,7 @@
     <None Include="src\shaders\orange.frag" />
     <None Include="src\shaders\shader.vert" />
     <None Include="src\shaders\simple_texture.frag" />
+    <None Include="src\shaders\simulation.frag" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>

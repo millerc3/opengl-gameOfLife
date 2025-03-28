@@ -1,51 +1,36 @@
 #version 330 core
-
 out vec4 FragColor;
 
-in vec3 FragPos;
 in vec2 TexCoord;
 
 uniform sampler2D currentState;    // current grid
 uniform ivec2 gridSize;			   // (width, height)
 
 int GetCellState(ivec2 pos) {
-	pos = ivec2(mod(vec2(pos), vec2(gridSize))); // wrapping
-	float state = texture(currentState, vec2(pos) / vec2(gridSize)).r;
+	//pos = ivec2(mod(vec2(pos), vec2(gridSize))); // wrapping
+	//float state = texture(currentState, vec2(pos) / vec2(gridSize)).r;
+	float state = texelFetch(currentState,pos, 0).r;
 	return state > .5 ? 1 : 0;
-}
-
-int GetLiveNeighborCount(ivec2 pos) {
-	int liveNeighbors = 0;
-
-	for (int xOffset = -1; xOffset < 2; xOffset++) {
-		for (int yOffset = -1; yOffset < 2; yOffset++) {
-			int neighborState = GetCellState(pos + ivec2(xOffset, yOffset));
-			liveNeighbors += neighborState;
-		}
-	}
-	return liveNeighbors;
 }
 
 void main()
 {
-	ivec2 pos = ivec2(TexCoord * vec2(gridSize));
+	vec3 _color = vec3(0.361, 0.89, 0.82);
+    
+	// vec2 pos = TexCoord * vec2(gridSize);
 
-	int cellState = GetCellState(pos);
-	int newState = cellState;
+	// vec3 finalColor;
+	// if ((pos.x + pos.y) % 2 == 0) {
+    //     // Main color
+    //     finalColor = texelColor.rgb;
+    // } else {
+    //     // Background color
+    //     finalColor = backgroundColor;
+    // }
 
-	int neighborCount = GetLiveNeighborCount(pos);
-	if (cellState == 1) {
-		if (neighborCount < 2 || neighborCount > 4) {
-			newState = 0;
-		}
-	}
-	else {
-		if (neighborCount == 3) {
-			newState = 1;
-		}
-	}
+	// //int cellState = GetCellState(pos);
 
-	newState = 1;
+	float s = texture(currentState, TexCoord).r;
 
-	FragColor = vec4(1); //vec4(newState * vec3(0.361, 0.89, 0.82), 1.0f);
+    FragColor = vec4(s * _color, 1.0f);
 }

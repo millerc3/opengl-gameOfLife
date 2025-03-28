@@ -1349,5 +1349,6 @@
       <Filter>Header Files</Filter>
     </None>
     <None Include="src\shaders\simple_texture.frag" />
+    <None Include="src\shaders\simulation.frag" />
   </ItemGroup>
 </Project>

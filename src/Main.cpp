@@ -17,11 +17,12 @@
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
 void CreateQuad(GLuint& VAO, GLuint& VBO, GLuint& EBO);
-void DeleteQuad(GLuint& VAO, GLuint& currentFBO, GLuint& nextFBO, GLuint& currentTexture, GLuint& nextTexture);
+void DeleteQuad(GLuint& VAO, GLuint& simFBO, GLuint& simulationTexture, GLuint& renderTexture);
 void ApplyGridToTexture(GLuint& FBO, GLuint& texture, std::vector<float>& grid);
-void ApplyTextureToGrid(GLuint& texture, std::vector<float>& grid);
-void CreatePingPongTextures(GLuint& FBO_A, GLuint& FBO_B, GLuint& textureA, GLuint& textureB);
-void PingPongRender(GLuint& VAO, GLuint& currentFBO, GLuint& nextFBO, GLuint& currentTexture, GLuint& nextTexture);
+//void ApplyTextureToGrid(GLuint& texture, std::vector<float>& grid);
+void CreatePingPongTextures(GLuint& simulationFBO, GLuint& currentTexture, GLuint& nextTexture);
+void SimulateGame(Shader& simShader, GLuint& VAO, GLuint& altFBO, GLuint& currentTexture, GLuint& nextTexture);
+void RenderToScreen(Shader& renderShader, GLuint& VAO, GLuint& texture);
 
 // settings
 const unsigned int SCR_WIDTH = 1024;
@@ -73,23 +74,30 @@ int main()
     }
 
     // Create GL objects
-    GLuint VAO, VBO, EBO, currentFBO, nextFBO, currentTexture, nextTexture;
+    GLuint VAO, VBO, EBO, simulationFBO, simulationTexture, renderTexture;
     // setup verts/indicies/ebo
     CreateQuad(VAO, VBO, EBO);
     // create FBOs and attach textures to them
-    CreatePingPongTextures(currentFBO, nextFBO, currentTexture, nextTexture);
+    CreatePingPongTextures(simulationFBO, simulationTexture, renderTexture);
+
+    Shader renderShader = Shader();
+    renderShader.use();
+    renderShader.setIVec2("gridSize", glm::uvec2(TEX_WIDTH, TEX_HEIGHT));
+    renderShader.setInt("currentState", 0); // use texture unit 0 as the current state
 
     // Create shader and set the uniforms I need
-    Shader shader = Shader();
-    shader.use();
-    shader.setIVec2("gridSize", glm::uvec2(TEX_WIDTH, TEX_HEIGHT));
-    shader.setInt("currentState", 0); // use texture unit 0 as the current state
+    Shader simShader = Shader("src/shaders/shader.vert", "src/shaders/simulation.frag");
+    simShader.use();
+    simShader.setIVec2("gridSize", glm::uvec2(TEX_WIDTH, TEX_HEIGHT));
+    simShader.setInt("currentState", 0); // use texture unit 0 as the current state
+
+    
 
     // Generate a random grid
     std::vector<float> grid(TEX_WIDTH * TEX_HEIGHT);
     RandomGenerator rng = RandomGenerator();
     rng.fillGridWithNoise(grid);
-    ApplyGridToTexture(currentFBO, currentTexture, grid);
+    ApplyGridToTexture(simulationFBO, simulationTexture, grid);
 
     // set timer for re-rendering to 0 to immediately render 
     float drawTimeRemaining = 0;
@@ -108,12 +116,65 @@ int main()
         // -----
         processInput(window);
 
-        // when the timer ends, we will redraw
         if (drawTimeRemaining <= 0) {
             std::cout << "Rendering new generation" << std::endl;
-            PingPongRender(VAO, currentFBO, nextFBO, currentTexture, nextTexture);
-            drawTimeRemaining = .5f;
+            glBindFramebuffer(GL_FRAMEBUFFER, simulationFBO);
+            glViewport(0, 0, TEX_WIDTH, TEX_HEIGHT);
+            //glClear(GL_COLOR_BUFFER_BIT);
+
+            simShader.use();
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, simulationTexture);
+
+
+            std::vector<GLfloat> pixels(TEX_WIDTH * TEX_HEIGHT);
+            glBindFramebuffer(GL_FRAMEBUFFER, simulationFBO);
+            glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, pixels.data());
+            
+
+            // render to simFBO
+            glBindVertexArray(VAO);
+            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+            
+            
+
+            //glReadPixels(0, 0, TEX_WIDTH, TEX_HEIGHT, GL_RED, GL_FLOAT, pixels.data());
+
+            // store the result into the render texture
+            glBindTexture(GL_TEXTURE_2D, renderTexture);
+            glCopyTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, 0, 0, TEX_WIDTH, TEX_HEIGHT, 0);
+
+            
+
+            drawTimeRemaining = 0.1f;
+
+            
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
+
+        glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+        glClear(GL_COLOR_BUFFER_BIT);
+        renderShader.use();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, renderTexture);
+
+        
+
+        glBindVertexArray(VAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+       
+
+
+        //// when the timer ends, we will redraw
+        //if (drawTimeRemaining <= 0) {
+        //    std::cout << "Rendering new generation" << std::endl;
+        //    SimulateGame(renderShader, VAO, simulationFBO, simulationTexture, renderTexture);
+        //    drawTimeRemaining = .5f;
+        //}
+
+        //RenderToScreen(renderShader, VAO, simulationTexture);
 
         // glfw: swap buffers and poll IO events (keys pressed/released, mouse moved etc.)
         // -------------------------------------------------------------------------------
@@ -121,7 +182,7 @@ int main()
         glfwPollEvents();
     }
 
-    DeleteQuad(VAO, currentFBO, nextFBO, currentTexture, nextTexture);
+    DeleteQuad(VAO, simulationFBO, simulationTexture, renderTexture);
 
     // glfw: terminate, clearing all previously allocated GLFW resources.
     // ------------------------------------------------------------------
@@ -190,34 +251,61 @@ void ApplyGridToTexture(GLuint& FBO, GLuint& texture, std::vector<float>& grid) 
     glBindFramebuffer(GL_FRAMEBUFFER, FBO);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, TEX_WIDTH, TEX_HEIGHT, GL_RED, GL_FLOAT, grid.data());
+    //glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, TEX_WIDTH, TEX_HEIGHT, 0, GL_RED, GL_FLOAT, grid.data());
+
+    //std::vector<float> readbackBuffer(grid.size());
+
+    //// Read back the texture data
+    //glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, readbackBuffer.data());
+
+    //// Compare the original grid with the readback data
+    //bool dataMatches = true;
+    //float epsilon = 1e-6f; // Small tolerance for floating-point comparisons
+
+    //for (size_t i = 0; i < grid.size(); ++i) {
+    //    if (std::abs(grid[i] - readbackBuffer[i]) > epsilon) {
+    //        dataMatches = false;
+    //        std::cerr << "Mismatch at index " << i
+    //            << ": Original = " << grid[i]
+    //            << ", Texture = " << readbackBuffer[i] << std::endl;
+    //        break;
+    //    }
+    //}
+
+    //if (dataMatches) {
+    //    std::cout << "Texture data verified successfully!" << std::endl;
+    //}
+    //else {
+    //    std::cerr << "Texture data verification failed." << std::endl;
+    //}
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 }
 
-void ApplyTextureToGrid(GLuint& texture, std::vector<float>& grid) {
-    glBindTexture(GL_TEXTURE_2D, texture);
+//void ApplyTextureToGrid(GLuint& texture, std::vector<float>& grid) {
+//    glBindTexture(GL_TEXTURE_2D, texture);
+//
+//    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, grid.data());
+//}
 
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, grid.data());
-}
 
-
-void DeleteQuad(GLuint& VAO, GLuint& currentFBO, GLuint& nextFBO, GLuint& currentTexture, GLuint& nextTexture) {
+void DeleteQuad(GLuint& VAO, GLuint& simFBO, GLuint& simulationTexture, GLuint& renderTexture) {
     glDeleteVertexArrays(1, &VAO);
-    glDeleteFramebuffers(1, &currentFBO);
-    glDeleteFramebuffers(1, &nextFBO);
-    glDeleteTextures(1, &currentTexture);
-    glDeleteTextures(1, &nextTexture);
+    glDeleteFramebuffers(1, &simFBO);
+    glDeleteTextures(1, &simulationTexture);
+    glDeleteTextures(1, &renderTexture);
 }
 
-void CreatePingPongTextures(GLuint& currentFBO, GLuint& nextFBO, GLuint& currentTexture, GLuint& nextTexture) {
+void CreatePingPongTextures(GLuint& simulationFBO, GLuint& simulationTexture, GLuint& renderTexture) {
     // Create the two frame buffers
-    glGenFramebuffers(1, &currentFBO);
-    glGenFramebuffers(1, &nextFBO);
+    glGenFramebuffers(1, &simulationFBO);
 
     // generate the two tetures
-    glGenTextures(1, &currentTexture);
-    glGenTextures(1, &nextTexture);
+    glGenTextures(1, &simulationTexture);
+    glGenTextures(1, &renderTexture);
 
-    GLuint textures[2] = { currentTexture, nextTexture };
+    GLuint textures[2] = { simulationTexture, renderTexture };
 
     // Create and configure the textures
     for (GLuint& tex : textures) {
@@ -225,36 +313,57 @@ void CreatePingPongTextures(GLuint& currentFBO, GLuint& nextFBO, GLuint& current
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, TEX_WIDTH, TEX_HEIGHT, 0, GL_RED, GL_FLOAT, nullptr);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     }
 
     // Attach textures to the frame buffers
-    glBindFramebuffer(GL_FRAMEBUFFER, currentFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, currentTexture, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, simulationFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, simulationTexture, 0);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, nextFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, nextTexture, 0);
-
-    
-
+    glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void PingPongRender(GLuint& VAO, GLuint& currentFBO, GLuint& nextFBO, GLuint& currentTexture, GLuint& nextTexture) {
+//void _CreatePingPongTextures(GLuint& simulationFBO, GLuint& simulationTexture, GLuint& renderTexture) {
+//    // Create the two frame buffers
+//    glGenFramebuffers(1, &simulationFBO);
+//
+//    // generate the two tetures
+//    glGenTextures(1, &simulationTexture);
+//    glGenTextures(1, &renderTexture);
+//
+//    GLuint textures[2] = { simulationTexture, renderTexture };
+//
+//    // Create and configure the textures
+//    for (GLuint& tex : textures) {
+//        glBindTexture(GL_TEXTURE_2D, tex);
+//        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, TEX_WIDTH, TEX_HEIGHT, 0, GL_RED, GL_FLOAT, nullptr);
+//        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+//        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+//        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+//        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+//    }
+//
+//    // Attach textures to the frame buffers
+//    glBindFramebuffer(GL_FRAMEBUFFER, simulationFBO);
+//    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, simulationTexture, 0);
+//
+//    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+//    //glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, renderTexture, 0);
+//}
+
+void SimulateGame(Shader& simShader, GLuint& VAO, GLuint& simFBO, GLuint& simulationTexture, GLuint& renderTexture) {
     // 1. Bind the nextFBO for rendering (write to the next generation texture)
-    glBindFramebuffer(GL_FRAMEBUFFER, nextFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, simFBO);
     glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT); // Or use the size of the texture
 
     // 2. Clear the nextFBO (texture) to ensure no leftover data
     glClear(GL_COLOR_BUFFER_BIT);
 
-    // 3. Attach nextTexture to nextFBO (we do this to make sure nextTexture is the target of rendering)
-    //glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, nextTexture, 0);
-
     // 4. Give the current texture to the shader (this is the input for the shader, previous grid state)
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, currentTexture);
+    glBindTexture(GL_TEXTURE_2D, simulationTexture);
+
+    simShader.use();
 
     // 5. Draw the quad (which will render the texture and apply Game of Life logic)
     glBindVertexArray(VAO);
@@ -264,6 +373,20 @@ void PingPongRender(GLuint& VAO, GLuint& currentFBO, GLuint& nextFBO, GLuint& cu
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // 7. Swap the current and next textures
-    std::swap(currentFBO, nextFBO);
-    std::swap(currentTexture, nextTexture);  // Swap textures so that the shader can process the new state in the next frame
+    //std::swap(currentTexture, nextTexture);  // Swap textures so that the shader can process the new state in the next frame
+}
+
+void RenderToScreen(Shader& renderShader, GLuint& VAO, GLuint& texture) {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    renderShader.use();
+
+    glBindVertexArray(VAO);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
