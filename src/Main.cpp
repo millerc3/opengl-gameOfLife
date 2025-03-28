@@ -112,12 +112,16 @@ int main()
         lastFrameTime = currentFrameTime;
         drawTimeRemaining -= deltaTime;
 
+        printf("FPS: %d\r", int(1.0f / deltaTime));
+
+        //std::cout << "FPS: " << 1.0f / deltaTime << std::endl;
+
         // input
         // -----
         processInput(window);
 
         if (drawTimeRemaining <= 0) {
-            std::cout << "Rendering new generation" << std::endl;
+            //std::cout << "Rendering new generation" << std::endl;
             glBindFramebuffer(GL_FRAMEBUFFER, simulationFBO);
             glViewport(0, 0, TEX_WIDTH, TEX_HEIGHT);
             //glClear(GL_COLOR_BUFFER_BIT);

@@ -10,7 +10,7 @@ uniform ivec2 gridSize;			   // (width, height)
 
 int GetCellState(ivec2 pos) {
 	float state = texture(currentState, vec2(pos) / vec2(gridSize)).r;
-	return state > .5 ? 1 : 0;
+	return state > .3 ? 1 : 0;
 }
 
 int GetLiveNeighborCount(ivec2 pos) {
