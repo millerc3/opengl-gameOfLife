@@ -10,7 +10,7 @@ uniform ivec2 gridSize;			   // (width, height)
 
 int GetCellState(ivec2 pos) {
 	float state = texture(currentState, vec2(pos) / vec2(gridSize)).r;
-	return state > .3 ? 1 : 0;
+	return state > .5 ? 1 : 0;
 }
 
 int GetLiveNeighborCount(ivec2 pos) {
@@ -31,7 +31,7 @@ void main()
 	ivec2 pos = ivec2(TexCoord.x * gridSize.x, TexCoord.y * gridSize.y);
 
 	if (pos.x == 0 || pos.y == 0 || pos.x == gridSize.x - 1|| pos.y == gridSize.y - 1) {
-		FragColor = vec4(0 * vec3(1), 1.0f);
+		FragColor = vec4(vec3(0), 1.0f);
 		return;
 	}
 

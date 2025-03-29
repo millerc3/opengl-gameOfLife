@@ -315,10 +315,12 @@
     <ClInclude Include="Libraries\include\KHR\khrplatform.h" />
     <ClInclude Include="include\Shader.h" />
     <ClInclude Include="include\RandomGenerator.h" />
+    <ClInclude Include="include\SimulationShader.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="include\glm\detail\glm.cpp" />
     <ClCompile Include="include\glm\glm.cppm" />
+    <ClCompile Include="src\SimulationShader.cpp" />
     <ClCompile Include="src\RandomGenerator.cpp" />
     <ClCompile Include="src\Shader.cpp" />
     <ClCompile Include="src\glad.c" />
